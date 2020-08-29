@@ -46,14 +46,22 @@ async fn login_post(
         .get_user_by_username(&params.username)
         .map_err(|_| error::ErrorInternalServerError("Database error"))?
     {
-        // TODO: use real hash
-        if user.password_hash == params.password {
+        if bcrypt::verify(&params.password, &user.password_hash)
+            .map_err(|_| error::ErrorInternalServerError("Verification error"))?
+        {
             id.remember(user.username);
             return Ok(HttpResponse::Found().header("location", "/").finish());
         }
     }
     Ok(HttpResponse::Found()
         .header("location", "/login?wrong_password")
+        .finish())
+}
+
+async fn logout(id: Identity) -> actix_web::Result<HttpResponse> {
+    id.forget();
+    Ok(HttpResponse::Found()
+        .header("location", "/login?logout")
         .finish())
 }
 
@@ -65,7 +73,7 @@ async fn main() -> std::io::Result<()> {
         let db = sled::Config::new().temporary(true).open().unwrap();
         db.add_user(User {
             username: "admin".to_owned(),
-            password_hash: "password".to_owned(),
+            password_hash: bcrypt::hash("password", bcrypt::DEFAULT_COST).unwrap(),
         })
         .unwrap()
         .unwrap();
@@ -80,6 +88,7 @@ async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(index))
             .route("/login", web::get().to(login))
             .route("/login", web::post().to(login_post))
+            .route("/logout", web::get().to(logout))
     })
     .bind("127.0.0.1:8080")?
     .run()
