@@ -3,8 +3,10 @@ Organize the movies your friend should definitly watch
 
 ## Features
 
-* [ ] User management (register / login)
-* [ ] Friends
+* User management
+    * [x] Login
+    * [ ] Register
+* [ ] Add friends
 * [ ] Add movies to friends watchlist
-* [ ] Create / search / edit / delete movies
-* [ ] Movie ratings
+* [ ] View own watchlist
+* [ ] Email notifications
