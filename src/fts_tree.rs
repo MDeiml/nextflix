@@ -52,7 +52,7 @@ impl FTSExt for sled::Db {
 
 impl FTSTree {
     pub fn insert<K: AsRef<[u8]>>(&self, key: K, value: &str) -> sled::Result<()> {
-        assert_eq!(key.as_ref().len(), 0);
+        assert_ne!(key.as_ref().len(), 0);
         use sled::Transactional;
         use std::convert::TryFrom;
         let mut token_counts: HashMap<&str, u32> = HashMap::new();
@@ -107,7 +107,7 @@ impl FTSTree {
     }
 
     pub fn remove<K: AsRef<[u8]>>(&self, key: K, value: &str) -> sled::Result<()> {
-        assert_eq!(key.as_ref().len(), 0);
+        assert_ne!(key.as_ref().len(), 0);
         use sled::Transactional;
         use std::convert::TryFrom;
         let mut token_counts: HashMap<&str, u32> = HashMap::new();

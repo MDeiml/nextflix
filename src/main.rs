@@ -7,6 +7,7 @@ use actix_web::{error, web, App, HttpResponse, HttpServer};
 use database::*;
 use model::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 type Tera = web::Data<tera::Tera>;
 type Db = web::Data<sled::Db>;
@@ -71,12 +72,20 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
         let db = sled::Config::new().temporary(true).open().unwrap();
-        db.add_user(User {
-            username: "admin".to_owned(),
-            password_hash: bcrypt::hash("password", bcrypt::DEFAULT_COST).unwrap(),
-        })
-        .unwrap()
-        .unwrap();
+        let _pulp_fiction_id = db
+            .add_movie(&Movie {
+                name: "Pulp Fiction".to_owned(),
+            })
+            .unwrap()
+            .unwrap();
+        let _admin_id = db
+            .add_user(&User {
+                username: "admin".to_owned(),
+                password_hash: bcrypt::hash("password", bcrypt::DEFAULT_COST).unwrap(),
+                friends: HashMap::new(),
+            })
+            .unwrap()
+            .unwrap();
         App::new()
             .wrap(IdentityService::new(
                 CookieIdentityPolicy::new(&private_key)
