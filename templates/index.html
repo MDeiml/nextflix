@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 
 {% block content %}
-Hello {{ username }}
+  {% if user %}
+    Hello {{ user.username }}
+  {% else %}
+    <a href="/login">Login</a>
+  {% endif %}
 {% endblock content %}
 

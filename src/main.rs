@@ -12,12 +12,15 @@ use std::collections::HashMap;
 type Tera = web::Data<tera::Tera>;
 type Db = web::Data<sled::Db>;
 
-async fn index(id: Identity, tera: Tera) -> actix_web::Result<HttpResponse> {
+async fn index(id: Identity, tera: Tera, db: Db) -> actix_web::Result<HttpResponse> {
     let mut ctx = tera::Context::new();
-    ctx.insert(
-        "username",
-        &id.identity().unwrap_or_else(|| "world".to_owned()),
-    );
+    if let Some(username) = id.identity() {
+        let (_user_id, user) = db
+            .get_user_by_username(&username)
+            .map_err(|_| error::ErrorInternalServerError("Database error"))?
+            .ok_or(error::ErrorInternalServerError("Authentication error"))?;
+        ctx.insert("user", &user);
+    }
     let body = tera
         .render("index.html", &ctx)
         .map_err(|_| error::ErrorInternalServerError("Template error"))?;

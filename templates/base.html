@@ -6,5 +6,8 @@
     <body>
         {% block content %}
         {% endblock content %}
+        {% if user %}
+          <a href="/logout">Logout</a>
+        {% endif %}
     </body>
 </html>
