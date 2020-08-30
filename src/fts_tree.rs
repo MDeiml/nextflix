@@ -9,7 +9,10 @@ pub fn tokens_iter(s: &str) -> impl Iterator<Item = &str> {
 
 pub fn is_token_charcter(c: char) -> bool {
     let category = GeneralCategory::of(c);
-    category.is_number() || category.is_letter() || category == GeneralCategory::PrivateUse
+    category.is_number()
+        || category.is_letter()
+        || category == GeneralCategory::PrivateUse
+        || c == '*'
 }
 
 const FTS_FREQUENCY_POSTFIX: &[u8] = b"_frequency";
@@ -192,14 +195,30 @@ impl FTSTree {
             .unwrap_or(0);
         let avgdl = total_dl as f32 / num_documents as f32;
         for (token, count) in token_counts {
-            if let Some(token_data) = self.tokens.get(token)? {
-                let total_count = u32::from_le_bytes(TryFrom::try_from(&token_data[0..4]).unwrap());
-                let id = &token_data[4..12];
-                for frequency_data_result in self.frequency.scan_prefix(id) {
-                    let (id_and_key, frequency_data) = frequency_data_result?;
-                    let frequency =
-                        u32::from_le_bytes(TryFrom::try_from(frequency_data.as_ref()).unwrap());
-                    let key = sled::IVec::from(&id_and_key[8..]);
+            // This is duplicate code, but it is probably faster because it avoids heap allocations
+            if token.ends_with("*") {
+                let mut total_count = 0;
+                let mut frequencies = HashMap::new();
+                for token_data_result in self.tokens.scan_prefix(&token[0..token.len() - 1]) {
+                    let (_token, token_data) = token_data_result?;
+                    total_count +=
+                        u32::from_le_bytes(TryFrom::try_from(&token_data[0..4]).unwrap());
+                    let id = &token_data[4..12];
+                    for frequency_data_result in self.frequency.scan_prefix(id) {
+                        let (id_and_key, frequency_data) = frequency_data_result?;
+                        let frequency =
+                            u32::from_le_bytes(TryFrom::try_from(frequency_data.as_ref()).unwrap());
+
+                        let key = sled::IVec::from(&id_and_key[8..]);
+                        *frequencies.entry(key).or_insert(0) += frequency;
+                    }
+                }
+                for (key, frequency) in frequencies {
+                    let dl = self
+                        .doclen
+                        .get(&key)?
+                        .map(|dl| u32::from_le_bytes(TryFrom::try_from(dl.as_ref()).unwrap()))
+                        .unwrap_or(0);
 
                     let k1 = 1.2;
                     let b = 0.75;
@@ -207,15 +226,37 @@ impl FTSTree {
                         / (total_count as f32 + 0.5)
                         + 1.0)
                         .ln();
-                    // TODO: Handle missing dl properly
-                    let dl = self
-                        .doclen
-                        .get(&key)?
-                        .map(|dl| u32::from_le_bytes(TryFrom::try_from(dl.as_ref()).unwrap()))
-                        .unwrap_or(0);
                     let bm25 = idf * frequency as f32 * (k1 + 1.0)
                         / (frequency as f32 + k1 * (1.0 - b + b * dl as f32 / avgdl as f32));
-                    *ret.entry(key).or_insert(0.0) += bm25 * count as f32;
+                    *ret.entry(key).or_insert(0.0) += bm25.max(0.0) * count as f32;
+                }
+            } else {
+                if let Some(token_data) = self.tokens.get(token)? {
+                    let total_count =
+                        u32::from_le_bytes(TryFrom::try_from(&token_data[0..4]).unwrap());
+                    let id = &token_data[4..12];
+                    for frequency_data_result in self.frequency.scan_prefix(id) {
+                        let (id_and_key, frequency_data) = frequency_data_result?;
+                        let frequency =
+                            u32::from_le_bytes(TryFrom::try_from(frequency_data.as_ref()).unwrap());
+                        let key = sled::IVec::from(&id_and_key[8..]);
+
+                        let k1 = 1.2;
+                        let b = 0.75;
+                        let idf = ((num_documents as f32 - total_count as f32 + 0.5)
+                            / (total_count as f32 + 0.5)
+                            + 1.0)
+                            .ln();
+                        // TODO: Handle missing dl properly
+                        let dl = self
+                            .doclen
+                            .get(&key)?
+                            .map(|dl| u32::from_le_bytes(TryFrom::try_from(dl.as_ref()).unwrap()))
+                            .unwrap_or(0);
+                        let bm25 = idf * frequency as f32 * (k1 + 1.0)
+                            / (frequency as f32 + k1 * (1.0 - b + b * dl as f32 / avgdl as f32));
+                        *ret.entry(key).or_insert(0.0) += bm25 * count as f32;
+                    }
                 }
             }
         }
@@ -255,5 +296,22 @@ mod tests {
         fts_tree.insert(b"k3", "bar").unwrap();
         fts_tree.remove(b"k3", "bar").unwrap();
         assert_eq!(cs, db.checksum());
+    }
+
+    #[test]
+    fn wildcard() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let fts_tree = db.open_fts("test").unwrap();
+        fts_tree.insert(b"k1", "foo bar").unwrap();
+        fts_tree.insert(b"k2", "foo").unwrap();
+        fts_tree.insert(b"k3", "bar").unwrap();
+        let res = fts_tree.query("f*").unwrap();
+        assert_eq!(res.get(&sled::IVec::from(b"k1")), Some(&0.3901917));
+        assert_eq!(res.get(&sled::IVec::from(b"k2")), Some(&0.52354836));
+        assert_eq!(res.get(&sled::IVec::from(b"k3")), None);
+        let res = fts_tree.query("*").unwrap();
+        assert_eq!(res.get(&sled::IVec::from(b"k1")), Some(&0.0));
+        assert_eq!(res.get(&sled::IVec::from(b"k2")), Some(&0.0));
+        assert_eq!(res.get(&sled::IVec::from(b"k3")), Some(&0.0));
     }
 }
