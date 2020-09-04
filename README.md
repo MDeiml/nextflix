@@ -1,5 +1,5 @@
 # nextflix
-Organize the movies your friend should definitly watch
+Organize the movies your friend should definitely watch
 
 ## Features
 
