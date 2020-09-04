@@ -3,6 +3,15 @@
 {% block content %}
   {% if user %}
     Hello {{ user.username }}
+
+    <h2>Movies to watch</h2>
+    {% if movies %}
+    <ul>
+      {% for movie_id, movie in movies %}
+      <li>{{ movie.name }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
   {% else %}
     <a href="/login">Login</a>
   {% endif %}
